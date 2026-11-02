@@ -1,0 +1,21 @@
+{
+  "name": "dzherba",
+  "version": "1.0.0",
+  "description": "Plateforme Digitale des Plantes Médicinales d'Algérie (Flore Algérienne)",
+  "private": true,
+  "scripts": {
+    "postinstall": "npm --prefix server install && npm --prefix web install",
+    "build": "npm --prefix web install && npm --prefix web run build && npm --prefix server install",
+    "start": "node server/server.js",
+    "dev": "node server/server.js"
+  },
+  "keywords": [
+    "botanique",
+    "algerie",
+    "plantes-medicinales",
+    "herbier",
+    "dzherba"
+  ],
+  "author": "DzHerba",
+  "license": "ISC"
+}

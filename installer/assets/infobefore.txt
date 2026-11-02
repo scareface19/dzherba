@@ -1,0 +1,19 @@
+=======================================================================
+   DzHerba -- Encyclopédie & IA de la Flore Médicinale d'Algérie
+=======================================================================
+
+Bienvenue dans l'assistant d'installation officielle de DzHerba.
+
+Ce programme va installer sur votre poste :
+  1. Le Serveur Backend & l'API REST DzHerba
+  2. L'Application Web & Cartographique interactive des 58 Wilayas
+  3. Le Runtime autonome Node.js
+  4. La configuration et l'initialisation de la base de données locale
+  5. La galerie des spécimens et photographies de la flore algérienne
+
+Prérequis :
+  - Windows 10 ou 11 (64-bit)
+  - Un serveur MySQL ou MariaDB local actif (port standard 3306)
+  - 1 Go d'espace disque disponible
+
+Cliquez sur "Suivant" pour continuer l'installation.

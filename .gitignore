@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+server/node_modules/
+web/node_modules/
+
+# Production build output (Render rebuilde automatiquement avec `npm run build`)
+web/dist/
+
+# Fichiers volumineux > 100 Mo (bloqués par GitHub)
+*.exe
+*.rar
+*.zip
+installer/dist/
+installer/mysql/
+
+# Fichiers temporaires & logs
+*.log
+logs/
+server/uploads/*
+!server/uploads/.gitkeep
+active_port.txt
+
+# Variables d'environnement
+.env
+.env.local
+.env.*.local
+
+# Système
+.DS_Store
+Thumbs.db

@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: dzherba
+    runtime: node
+    plan: free
+    region: frankfurt # ou oregon
+    buildCommand: npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      # Optionnel : si vous connectez une base MySQL Cloud (Aiven, TiDB, PlanetScale, Clever Cloud...)
+      # - key: DB_HOST
+      #   value: your-mysql-host.com
+      # - key: DB_USER
+      #   value: your-user
+      # - key: DB_PASSWORD
+      #   value: your-password
+      # - key: DB_NAME
+      #   value: dzherba_db
+      # - key: DB_PORT
+      #   value: 3306

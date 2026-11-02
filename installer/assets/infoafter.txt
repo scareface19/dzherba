@@ -1,0 +1,28 @@
+=======================================================================
+   DzHerba -- RAPPORT FINAL D'INSTALLATION
+=======================================================================
+
+L'installation de DzHerba s'est terminée avec succès sur votre ordinateur.
+
+Dossier d'installation : {app}
+
+ACCÈS À L'APPLICATION :
+-----------------------------------------------------------------------
+  - Application Web & Encyclopédie : http://localhost:5000
+  - API REST Backend               : http://localhost:5000/api
+  - Spécimens & Photos             : http://localhost:5000/startup/startup/
+
+GESTION DES SERVICES :
+-----------------------------------------------------------------------
+  - Pour démarrer l'application : Utilisez le raccourci sur le Bureau
+    ou exécutez "{app}\scripts\start-dzherba.bat"
+  - Pour arrêter l'application  : Exécutez "{app}\scripts\stop-dzherba.bat"
+
+COMPTES UTILISATEURS PAR DÉFAUT :
+-----------------------------------------------------------------------
+  - Administrateur : admin@dzherba.dz  (Accès total & gestion des tarifs)
+  - Chercheur      : researcher@dzherba.dz (Monographies PDF complètes)
+  - Public         : client@dzherba.dz
+
+Merci d'utiliser DzHerba, la référence nationale des plantes d'Algérie.
+=======================================================================

@@ -1,0 +1,6 @@
+{
+  "total_images": 1660,
+  "total_species": 323,
+  "embedding_dim": 1280,
+  "model_architecture": "MobileNetV2 (1280-dim Normalized Feature Vector)"
+}
