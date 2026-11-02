@@ -231,6 +231,10 @@ export const api = {
 
   // Computer Vision Identification
   async identifyPlant(fileOrBase64: File | string): Promise<{
+    isPlant?: boolean;
+    accuracy?: number;
+    reason?: string;
+    message?: string;
     predictions: Array<{ plant: Plant; confidence: number; similarity: number }>;
     timestamp: string;
   }> {
@@ -249,7 +253,10 @@ export const api = {
         body: formData
       });
     }
-    if (!res.ok) throw new Error("Erreur lors de l'identification par vision IA");
+    if (!res.ok) {
+      const errData = await res.json().catch(() => null);
+      throw new Error(errData?.error || "Erreur lors de l'identification par vision IA");
+    }
     return await res.json();
   },
 
