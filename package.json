@@ -4,8 +4,8 @@
   "description": "Plateforme Digitale des Plantes Médicinales d'Algérie (Flore Algérienne)",
   "private": true,
   "scripts": {
-    "postinstall": "npm --prefix server install && npm --prefix web install",
-    "build": "npm --prefix web install && npm --prefix web run build && npm --prefix server install",
+    "postinstall": "npm --prefix web install --include=dev && npm --prefix server install --omit=dev",
+    "build": "npm --prefix web install --include=dev && npm --prefix web run build && npm --prefix server install --omit=dev",
     "start": "node server/server.js",
     "dev": "node server/server.js"
   },
