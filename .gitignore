@@ -25,6 +25,10 @@ active_port.txt
 .env.local
 .env.*.local
 
+# Temporary SQLite WAL files
+*.db-wal
+*.db-shm
+
 # Système
 .DS_Store
 Thumbs.db

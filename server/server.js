@@ -1,6 +1,5 @@
 const express = require('express');
 const cors = require('cors');
-const mysql = require('mysql2/promise');
 const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
@@ -9,6 +8,7 @@ const { execFile } = require('child_process');
 const { getLicenseStatus, activateLicense } = require('./license');
 const { expandSearchQuery, matchPlantMultilingual, searchPlantsMultilingual } = require('./multilingualSearch');
 const botanicalRagEngine = require('./botanicalRagEngine');
+const db = require('./db');
 
 // Fallback in-memory corpus if MySQL is not available (e.g. Render Cloud deployment)
 let localPlantsFallback = [];
@@ -83,34 +83,91 @@ app.use('/api', (req, res, next) => {
   next();
 });
 
-// Serve real startup plant image folders
-const possibleStartupDirs = [
-  path.join(__dirname, '..', 'startup', 'startup'),
-  path.join(__dirname, 'startup', 'startup'),
-  path.join(process.cwd(), 'startup', 'startup'),
-  path.join(__dirname, '..', 'startup'),
-  path.join(process.cwd(), 'startup')
-];
-const startupDir = possibleStartupDirs.find((d) => fs.existsSync(d)) || possibleStartupDirs[0];
-console.log('[DzHerba API] Botanical photos directory resolved to:', startupDir);
-app.use('/startup/startup', express.static(startupDir));
-app.use('/startup', express.static(startupDir));
-
-// Fallback image endpoint to guarantee delivery even if special characters or spaces are URL-encoded
-app.get(['/startup/startup/:id/:filename', '/startup/:id/:filename'], (req, res) => {
-  const { id, filename } = req.params;
-  const decoded = decodeURIComponent(filename);
-  const possiblePaths = [
-    path.join(startupDir, id, decoded),
-    path.join(startupDir, id, filename),
-    path.join(__dirname, '..', 'startup', 'startup', id, decoded),
-    path.join(__dirname, '..', 'startup', id, filename)
+// Serve real startup plant image folders (cross-platform case-insensitive resolver)
+function resolveStartupDir() {
+  const candidates = [
+    path.join(__dirname, '..', 'Startup', 'Startup'),
+    path.join(__dirname, '..', 'startup', 'startup'),
+    path.join(__dirname, '..', 'Startup'),
+    path.join(__dirname, '..', 'startup'),
+    path.join(__dirname, 'Startup', 'Startup'),
+    path.join(__dirname, 'startup', 'startup'),
+    path.join(process.cwd(), 'Startup', 'Startup'),
+    path.join(process.cwd(), 'startup', 'startup'),
+    path.join(process.cwd(), 'Startup'),
+    path.join(process.cwd(), 'startup')
   ];
-  const found = possiblePaths.find((p) => fs.existsSync(p));
-  if (found) {
-    return res.sendFile(path.resolve(found));
+  for (const c of candidates) {
+    if (fs.existsSync(c)) return c;
   }
-  res.status(404).send('Plant photo not found');
+  // Try case-insensitive directory resolution from parent
+  try {
+    const parent = path.resolve(__dirname, '..');
+    const items = fs.readdirSync(parent);
+    const startItem = items.find(i => i.toLowerCase() === 'startup');
+    if (startItem) {
+      const p1 = path.join(parent, startItem);
+      const subItems = fs.readdirSync(p1);
+      const subStart = subItems.find(i => i.toLowerCase() === 'startup');
+      if (subStart) {
+        return path.join(p1, subStart);
+      }
+      return p1;
+    }
+  } catch (e) {}
+  return path.join(__dirname, '..', 'Startup', 'Startup');
+}
+
+const startupDir = resolveStartupDir();
+console.log('[DzHerba API] Botanical photos directory resolved to:', startupDir);
+
+// Static express mounts
+const photoMounts = ['/startup/startup', '/Startup/Startup', '/startup', '/Startup'];
+photoMounts.forEach(route => {
+  app.use(route, express.static(startupDir, { maxAge: '7d' }));
+});
+
+// Dynamic case-insensitive and URL-decoded image fallback middleware (guarantees delivery on Linux / Render)
+photoMounts.forEach(route => {
+  app.use(route, (req, res, next) => {
+    try {
+      const relativePath = decodeURIComponent(req.path.replace(/^\/+/, ''));
+      if (!relativePath) return next();
+
+      // 1. Direct path check
+      const direct = path.join(startupDir, relativePath);
+      if (fs.existsSync(direct) && fs.statSync(direct).isFile()) {
+        return res.sendFile(path.resolve(direct));
+      }
+
+      // 2. Case-insensitive segment-by-segment check
+      const parts = relativePath.split(/[/\\]/).filter(Boolean);
+      let cur = startupDir;
+      let matchedAll = true;
+
+      for (const part of parts) {
+        if (!fs.existsSync(cur) || !fs.statSync(cur).isDirectory()) {
+          matchedAll = false;
+          break;
+        }
+        const entries = fs.readdirSync(cur);
+        const match = entries.find(e => e.toLowerCase() === part.toLowerCase());
+        if (match) {
+          cur = path.join(cur, match);
+        } else {
+          matchedAll = false;
+          break;
+        }
+      }
+
+      if (matchedAll && fs.existsSync(cur) && fs.statSync(cur).isFile()) {
+        return res.sendFile(path.resolve(cur));
+      }
+    } catch (err) {
+      console.warn('[DzHerba Photo Route Error]:', err.message);
+    }
+    next();
+  });
 });
 
 // Serve uploads directory
@@ -141,167 +198,8 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-// MySQL Connection Pool (XAMPP default port 3306, user root, no password)
-const pool = mysql.createPool({
-  host: process.env.DB_HOST || '127.0.0.1',
-  port: process.env.DB_PORT || 3306,
-  user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD || '',
-  database: process.env.DB_NAME || 'dzherba_db',
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0,
-  charset: 'utf8mb4'
-});
-
-// Auto-initialize users table in MySQL if needed
-async function initUsersTable() {
-  try {
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS users (
-        id VARCHAR(50) PRIMARY KEY,
-        name VARCHAR(255) NOT NULL,
-        email VARCHAR(255) UNIQUE NOT NULL,
-        password VARCHAR(255) NOT NULL,
-        role ENUM('admin', 'researcher', 'institution', 'student', 'free') DEFAULT 'free',
-        organization VARCHAR(255),
-        status VARCHAR(50) DEFAULT 'active',
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-    `);
-
-    // Ensure enum includes 'student' for pre-existing databases
-    try {
-      await pool.query("ALTER TABLE users MODIFY COLUMN role ENUM('admin', 'researcher', 'institution', 'student', 'free') DEFAULT 'free'");
-    } catch (e) {}
-
-    const [existing] = await pool.query('SELECT COUNT(*) as cnt FROM users');
-    if (existing[0].cnt === 0) {
-      const demoUsers = [
-        ['USR-ADMIN', 'Dr. Reda Mansouri (Admin Master)', 'admin@dzherba.dz', 'admin123', 'admin', 'Direction Technique & Scientifique DzHerba'],
-        ['USR-RES-01', 'Pr. Amina Benali', 'chercheur@univ-alger.dz', 'chercheur123', 'researcher', 'Faculté de Pharmacie - Université Alger 1'],
-        ['USR-UNIV-02', 'Département de Biologie & Pharmacie', 'campus@univ-setif.dz', 'campus123', 'institution', 'Université Ferhat Abbas Sétif 1'],
-        ['USR-STU-04', 'Yacine Amrani (Étudiant Biologie)', 'etudiant@univ-alger.dz', 'etudiant123', 'student', 'Faculté des Sciences Biologiques - USTHB'],
-        ['USR-CIT-03', 'Sofiane Cherif', 'citoyen@dzherba.dz', 'citoyen123', 'free', 'Grand Public & Herboristerie']
-      ];
-      for (const u of demoUsers) {
-        await pool.query(
-          'INSERT IGNORE INTO users (id, name, email, password, role, organization) VALUES (?, ?, ?, ?, ?, ?)',
-          u
-        );
-      }
-      console.log('✅ Default accounts seeded in MySQL users table.');
-    }
-  } catch (err) {
-    console.warn('⚠️ Users table initialization check:', err.message);
-  }
-}
-initUsersTable();
-
-// Auto-initialize and verify all 773 medicinal plants in MySQL dzherba_db
-async function initPlantsTable() {
-  try {
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS plants (
-        id INT PRIMARY KEY,
-        scientific_name VARCHAR(255) NOT NULL,
-        family VARCHAR(100),
-        order_name VARCHAR(100),
-        genus VARCHAR(100),
-        species VARCHAR(100),
-        vernacular_raw TEXT,
-        vernacular_names JSON,
-        habitat_description TEXT,
-        flowering_harvesting TEXT,
-        regions JSON,
-        parts_used TEXT,
-        dosage TEXT,
-        uses TEXT,
-        phytochemical_profile MEDIUMTEXT,
-        activities MEDIUMTEXT,
-        experimental_data MEDIUMTEXT,
-        clinical_data MEDIUMTEXT,
-        toxicity TEXT,
-        contraindications TEXT,
-        drug_interactions TEXT,
-        plant_interactions TEXT,
-        references_text TEXT,
-        images JSON,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        FULLTEXT KEY ft_plant_search (scientific_name, vernacular_raw, family, uses)
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-    `);
-
-    const [[countResult]] = await pool.query('SELECT COUNT(*) AS total FROM plants');
-    if (countResult && countResult.total < 773) {
-      const candidates = [
-        path.join(__dirname, '..', 'data', 'plants.json'),
-        path.join(__dirname, 'data', 'plants.json'),
-        path.join(process.cwd(), 'data', 'plants.json')
-      ];
-      const plantsJsonPath = candidates.find((p) => fs.existsSync(p));
-      if (plantsJsonPath) {
-        console.log(`[DzHerba DB] Auto-populating ${countResult.total < 1 ? 'all 773' : 'missing'} medicinal plants...`);
-        const raw = fs.readFileSync(plantsJsonPath, 'utf8');
-        const plants = JSON.parse(raw);
-
-        const sql = `
-          REPLACE INTO plants (
-            id, scientific_name, family, order_name, genus, species,
-            vernacular_raw, vernacular_names, habitat_description, flowering_harvesting,
-            regions, parts_used, dosage, uses, phytochemical_profile, activities,
-            experimental_data, clinical_data, toxicity, contraindications,
-            drug_interactions, plant_interactions, references_text, images
-          ) VALUES ?
-        `;
-
-        const values = plants.map((p) => [
-          p.id,
-          p.scientific_name || '',
-          p.taxonomy?.family || '',
-          p.taxonomy?.order || '',
-          p.taxonomy?.genus || (p.scientific_name || '').split(' ')[0] || '',
-          p.taxonomy?.species || (p.scientific_name || '').split(' ')[1] || '',
-          p.vernacular_raw || '',
-          JSON.stringify(p.vernacular_names || []),
-          p.distribution?.habitat_description || '',
-          p.distribution?.flowering_harvesting || '',
-          JSON.stringify(p.distribution?.regions || []),
-          p.traditional_medicine?.parts_used || '',
-          p.traditional_medicine?.dosage || '',
-          p.traditional_medicine?.uses || '',
-          p.pharmacology?.phytochemical_profile || '',
-          p.pharmacology?.activities || '',
-          p.scientific_data?.experimental || '',
-          p.scientific_data?.clinical || '',
-          p.safety_profile?.toxicity || '',
-          p.safety_profile?.contraindications || '',
-          p.safety_profile?.drug_interactions || '',
-          p.safety_profile?.plant_interactions || '',
-          p.references || '',
-          JSON.stringify(p.images || [])
-        ]);
-
-        await pool.query(sql, [values]);
-        console.log(`✅ [DzHerba DB] ${values.length} medicinal plants verified & imported successfully into MySQL dzherba_db.`);
-      }
-    } else {
-      console.log(`✅ [DzHerba DB] Plants table verified with ${countResult.total} species.`);
-    }
-
-    // Sanitize any existing absolute 5000 URLs in MySQL to relative paths
-    try {
-      await pool.query(`UPDATE plants SET images = REPLACE(images, 'http://127.0.0.1:5000', '') WHERE images LIKE '%http://127.0.0.1:5000%'`);
-      await pool.query(`UPDATE plants SET images = REPLACE(images, 'http://localhost:5000', '') WHERE images LIKE '%http://localhost:5000%'`);
-    } catch (cleanErr) {
-      // Ignore if table or format doesn't match
-    }
-  } catch (err) {
-    console.warn('⚠️ Plants table initialization check:', err.message);
-  }
-}
-initPlantsTable();
+// SQLite Universal Database Interface (Default, portable, zero-configuration)
+const pool = db;
 
 // Helper to format a raw MySQL row into the full Plant object
 function formatPlantRow(row) {
@@ -1280,7 +1178,7 @@ if (fs.existsSync(distDir)) {
 function startServer(port, maxAttempts = 10) {
   const srv = app.listen(port, () => {
     console.log(`[DzHerba API] Backend running on http://127.0.0.1:${port}`);
-    console.log(`[DzHerba API] Connected to MySQL database 'dzherba_db' at 127.0.0.1:3306`);
+    console.log(`[DzHerba API] Connected to SQLite database 'data/dzherba.db'`);
     try {
       fs.writeFileSync(path.join(__dirname, '..', 'active_port.txt'), port.toString(), 'utf8');
     } catch (e) {}
