@@ -34,32 +34,38 @@ function ensureDirExists(filePath) {
 }
 
 function loadLicense() {
-  let fileToRead = null;
+  let primaryData = null;
+  let fallbackData = null;
+
   if (fs.existsSync(primaryLicenseFile)) {
-    fileToRead = primaryLicenseFile;
-  } else if (fs.existsSync(fallbackLicenseFile)) {
-    fileToRead = fallbackLicenseFile;
+    try { primaryData = JSON.parse(fs.readFileSync(primaryLicenseFile, 'utf8')); } catch (e) {}
+  }
+  if (fs.existsSync(fallbackLicenseFile)) {
+    try { fallbackData = JSON.parse(fs.readFileSync(fallbackLicenseFile, 'utf8')); } catch (e) {}
+  }
+
+  // Prioritize an already activated license if present in either location
+  let data = null;
+  if (primaryData && primaryData.activated) {
+    data = primaryData;
+  } else if (fallbackData && fallbackData.activated) {
+    data = fallbackData;
+  } else {
+    data = primaryData || fallbackData;
   }
 
   const now = Date.now();
 
-  if (fileToRead) {
-    try {
-      const raw = fs.readFileSync(fileToRead, 'utf8');
-      const data = JSON.parse(raw);
-      
-      // Detect backwards clock tampering
-      if (data.lastSeenTimestamp && now < data.lastSeenTimestamp - 3600000) {
-        console.warn('⚠️ Décalage d horloge système détecté');
-      } else {
-        data.lastSeenTimestamp = Math.max(data.lastSeenTimestamp || 0, now);
-      }
-
-      saveLicense(data);
-      return data;
-    } catch (e) {
-      console.warn('Could not read license file, reinitializing:', e.message);
+  if (data) {
+    // Detect backwards clock tampering
+    if (data.lastSeenTimestamp && now < data.lastSeenTimestamp - 3600000) {
+      console.warn('⚠️ Décalage d horloge système détecté');
+    } else {
+      data.lastSeenTimestamp = Math.max(data.lastSeenTimestamp || 0, now);
     }
+
+    saveLicense(data);
+    return data;
   }
 
   // First run: Initialize 15-day trial
