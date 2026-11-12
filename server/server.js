@@ -63,24 +63,8 @@ app.post('/api/license/activate', (req, res) => {
   res.json(result);
 });
 
-// Middleware: restrict API if 15-day trial is expired
+// Middleware: Unlimited license mode (all routes are permanently and fully accessible)
 app.use('/api', (req, res, next) => {
-  if (
-    req.path === '/license/status' ||
-    req.path === '/license/activate' ||
-    req.path === '/health'
-  ) {
-    return next();
-  }
-
-  const lic = getLicenseStatus();
-  if (lic.isExpired) {
-    return res.status(403).json({
-      error: 'TRIAL_EXPIRED',
-      message: 'La période d\'évaluation de 15 jours de DzHerba a expiré. Veuillez activer la licence commerciale.',
-      license: lic
-    });
-  }
   next();
 });
 

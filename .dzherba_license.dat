@@ -1,9 +1,10 @@
 {
   "firstRunTimestamp": 1792882431181,
-  "lastSeenTimestamp": 1793525511697,
+  "lastSeenTimestamp": 1794484609845,
   "trialDays": 15,
-  "activated": false,
-  "licenseKey": null,
-  "activatedAt": null,
-  "checksum": "22a5afbfef9b4ed64a9745418f51c7ac1f343c9aab210c661dafec62bc96ffb1"
+  "activated": true,
+  "licenseKey": "DZHERBA-2026-COMMERCIAL-PRO",
+  "activatedAt": 1794427874885,
+  "checksum": "ed36a0c077e373e429a1fa86898238591b22f6cf2343afe2fb03ad1a8ca6013b",
+  "unlimited": true
 }

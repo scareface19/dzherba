@@ -2,8 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
-const TRIAL_DURATION_DAYS = 15;
-const TRIAL_DURATION_MS = TRIAL_DURATION_DAYS * 24 * 60 * 60 * 1000;
+const TRIAL_DURATION_DAYS = 99999;
 const SECRET_SALT = 'DZHERBA_BOTANICAL_SALT_SECURE_2026';
 
 // Paths to check for license
@@ -17,6 +16,17 @@ const MASTER_KEYS = [
   'DZHERBA-FULL-MASTER-773',
   'DZHERBA-UNIV-CAMPUS-2026'
 ];
+
+const UNLIMITED_PERMANENT_LICENSE = {
+  status: 'activated',
+  isExpired: false,
+  trialActive: false,
+  isActivated: true,
+  licenseKey: 'DZHERBA-2026-COMMERCIAL-PRO',
+  daysRemaining: 99999,
+  totalTrialDays: 99999,
+  message: 'Licence Commerciale DzHerba Illimitée & Permanente (Accès à vie)'
+};
 
 function generateChecksum(data) {
   return crypto.createHmac('sha256', SECRET_SALT)
@@ -44,46 +54,34 @@ function loadLicense() {
     try { fallbackData = JSON.parse(fs.readFileSync(fallbackLicenseFile, 'utf8')); } catch (e) {}
   }
 
-  // Prioritize an already activated license if present in either location
-  let data = null;
-  if (primaryData && primaryData.activated) {
-    data = primaryData;
-  } else if (fallbackData && fallbackData.activated) {
-    data = fallbackData;
-  } else {
-    data = primaryData || fallbackData;
-  }
-
+  let data = primaryData || fallbackData;
   const now = Date.now();
 
-  if (data) {
-    // Detect backwards clock tampering
-    if (data.lastSeenTimestamp && now < data.lastSeenTimestamp - 3600000) {
-      console.warn('⚠️ Décalage d horloge système détecté');
-    } else {
-      data.lastSeenTimestamp = Math.max(data.lastSeenTimestamp || 0, now);
-    }
-
-    saveLicense(data);
-    return data;
+  if (!data) {
+    data = {
+      firstRunTimestamp: now,
+      lastSeenTimestamp: now,
+      trialDays: 99999,
+      activated: true,
+      licenseKey: 'DZHERBA-2026-COMMERCIAL-PRO',
+      activatedAt: now,
+      checksum: ''
+    };
   }
 
-  // First run: Initialize 15-day trial
-  const newLicense = {
-    firstRunTimestamp: now,
-    lastSeenTimestamp: now,
-    trialDays: TRIAL_DURATION_DAYS,
-    activated: false,
-    licenseKey: null,
-    activatedAt: null,
-    checksum: ''
-  };
-  newLicense.checksum = generateChecksum(newLicense);
-  saveLicense(newLicense);
-  return newLicense;
+  // Enforce permanent unlimited activation
+  data.activated = true;
+  data.licenseKey = data.licenseKey || 'DZHERBA-2026-COMMERCIAL-PRO';
+  data.lastSeenTimestamp = Math.max(data.lastSeenTimestamp || 0, now);
+  data.unlimited = true;
+
+  saveLicense(data);
+  return data;
 }
 
 function saveLicense(data) {
+  data.activated = true;
+  data.licenseKey = data.licenseKey || 'DZHERBA-2026-COMMERCIAL-PRO';
   data.checksum = generateChecksum(data);
   const json = JSON.stringify(data, null, 2);
   try {
@@ -97,54 +95,12 @@ function saveLicense(data) {
 }
 
 function getLicenseStatus() {
-  const license = loadLicense();
-  const now = Date.now();
-
-  if (license.activated) {
-    return {
-      status: 'activated',
-      isExpired: false,
-      trialActive: false,
-      isActivated: true,
-      licenseKey: license.licenseKey,
-      daysRemaining: 99999,
-      totalTrialDays: TRIAL_DURATION_DAYS,
-      message: 'Licence Commerciale DzHerba Activée'
-    };
-  }
-
-  const elapsedMs = Math.max(0, now - license.firstRunTimestamp);
-  const remainingMs = Math.max(0, TRIAL_DURATION_MS - elapsedMs);
-  const daysRemaining = Math.max(0, Math.ceil(remainingMs / (24 * 60 * 60 * 1000)));
-  const isExpired = elapsedMs >= TRIAL_DURATION_MS;
-
-  return {
-    status: isExpired ? 'expired' : 'trial',
-    isExpired,
-    trialActive: !isExpired,
-    isActivated: false,
-    daysRemaining,
-    firstRunDate: new Date(license.firstRunTimestamp).toISOString(),
-    expiresAt: new Date(license.firstRunTimestamp + TRIAL_DURATION_MS).toISOString(),
-    totalTrialDays: TRIAL_DURATION_DAYS,
-    message: isExpired
-      ? 'La période d\'évaluation de 15 jours est expirée.'
-      : `Version d'évaluation active : il reste ${daysRemaining} jour(s).`
-  };
+  loadLicense();
+  return { ...UNLIMITED_PERMANENT_LICENSE };
 }
 
 function activateLicense(key) {
-  if (!key || typeof key !== 'string') {
-    return { success: false, message: 'Clé de licence invalide.' };
-  }
-
-  const cleanKey = key.trim().toUpperCase();
-  const isValid = MASTER_KEYS.includes(cleanKey) || cleanKey.startsWith('DZHERBA-2026-');
-
-  if (!isValid) {
-    return { success: false, message: 'Clé d\'activation incorrecte ou invalide.' };
-  }
-
+  const cleanKey = (key || 'DZHERBA-2026-COMMERCIAL-PRO').trim().toUpperCase();
   const license = loadLicense();
   license.activated = true;
   license.licenseKey = cleanKey;
@@ -154,7 +110,7 @@ function activateLicense(key) {
 
   return {
     success: true,
-    message: 'Félicitations ! Votre licence DzHerba a été activée avec succès.',
+    message: 'Félicitations ! Votre licence DzHerba Illimitée est active de façon permanente.',
     status: getLicenseStatus()
   };
 }

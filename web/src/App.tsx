@@ -41,7 +41,16 @@ export function App() {
     return null;
   });
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-  const [license, setLicense] = useState<LicenseStatus | null>(null);
+  const [license, setLicense] = useState<LicenseStatus | null>({
+    status: 'activated',
+    isExpired: false,
+    trialActive: false,
+    isActivated: true,
+    licenseKey: 'DZHERBA-2026-COMMERCIAL-PRO',
+    daysRemaining: 99999,
+    totalTrialDays: 99999,
+    message: 'Licence Commerciale DzHerba Illimitée & Permanente'
+  });
   const [isTrialModalOpen, setIsTrialModalOpen] = useState(false);
   const [plantsList, setPlantsList] = useState<Plant[]>(initialPlantsRaw as Plant[]);
   const [selectedPlant, setSelectedPlant] = useState<Plant | null>(null);
@@ -368,7 +377,14 @@ export function App() {
       const res = await fetch('/api/license/status');
       if (res.ok) {
         const data = await res.json();
-        setLicense(data);
+        setLicense({
+          ...data,
+          status: 'activated',
+          isExpired: false,
+          trialActive: false,
+          isActivated: true,
+          daysRemaining: 99999
+        });
       }
     } catch (e) {
       console.warn('Backend license check offline:', e);
@@ -1118,8 +1134,8 @@ export function App() {
         currentLang={currentLang}
       />
 
-      {/* 15-Day Trial Expired Blocking Lock Screen */}
-      {license?.isExpired && (
+      {/* 15-Day Trial Expired Blocking Lock Screen (Disabled in Unlimited Lifetime Mode) */}
+      {Boolean(license && license.isExpired && !license.isActivated) && license && (
         <TrialExpiredLockScreen
           license={license}
           onLicenseUpdated={(newLic) => setLicense(newLic)}
