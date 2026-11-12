@@ -10,6 +10,7 @@ const { expandSearchQuery, matchPlantMultilingual, searchPlantsMultilingual } = 
 const botanicalRagEngine = require('./botanicalRagEngine');
 const db = require('./db');
 const { analyzeBotanicalBiometrics, callGeminiVision } = require('./visionEngine');
+const { retrainVisionSignatures } = require('../scripts/regenerate_vision_signatures');
 
 // Fallback in-memory corpus if MySQL is not available (e.g. Render Cloud deployment)
 let localPlantsFallback = [];
@@ -547,34 +548,18 @@ app.post('/api/plants/:id/images', upload.array('images', 10), async (req, res) 
 // -------------------------------------------------------------
 app.post('/api/vision/retrain', async (req, res) => {
   try {
-    const scriptPath = path.join(__dirname, '..', 'scripts', 'regenerate_vision_signatures.js');
-    const { exec } = require('child_process');
-    exec(`node "${scriptPath}"`, async (error, stdout, stderr) => {
-      if (error) {
-        console.error('Vision retraining error:', stderr || error);
-        return res.status(500).json({ error: 'Vision retraining failed', details: stderr });
-      }
+    const visionData = await retrainVisionSignatures();
+    visionSignatures = visionData;
+    console.log(`[DzHerba Vision] Modèle IA Vision réentraîné avec succès : ${visionSignatures.count} signatures pour ${visionSignatures.speciesCount} espèces.`);
 
-      // Reload signatures in memory
-      try {
-        const hashFile = path.join(__dirname, 'models', 'plant_vision_hashes.json');
-        if (fs.existsSync(hashFile)) {
-          visionSignatures = JSON.parse(fs.readFileSync(hashFile, 'utf8'));
-          console.log(`[DzHerba Vision] Reloaded ${visionSignatures.count} visual signatures in memory.`);
-        }
-      } catch (reloadErr) {
-        console.warn('Could not reload signatures:', reloadErr.message);
-      }
-
-      res.json({
-        success: true,
-        message: 'Modèle IA Vision réentraîné avec succès',
-        count: visionSignatures.count,
-        speciesCount: visionSignatures.speciesCount,
-        details: stdout
-      });
+    res.json({
+      success: true,
+      message: 'Modèle IA Vision réentraîné avec succès',
+      count: visionData.count,
+      speciesCount: visionData.speciesCount
     });
   } catch (err) {
+    console.error('[DzHerba Vision] Retraining error:', err);
     res.status(500).json({ error: err.message });
   }
 });

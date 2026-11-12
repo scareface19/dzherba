@@ -1,38 +1,65 @@
 /**
  * DzHerba - Régénération du Modèle de Vision Botanique & Indexation des Photos
- * Ce script scanne D:\DzHerba\startup\startup, génère les signatures visuelles
- * d'identification (empreintes MD5 et tailles), et met à jour plants.json + MySQL.
+ * Scanne les dossiers botaniques de façon multiplateforme (Windows & Linux / Render),
+ * génère les signatures visuelles IA (hashes MD5, tailles, métadonnées),
+ * et synchronise data/plants.json + SQLite data/dzherba.db.
  */
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
-let mysql;
-try {
-  mysql = require('mysql2/promise');
-} catch (e) {
-  mysql = require(path.resolve(__dirname, '..', 'server', 'node_modules', 'mysql2', 'promise'));
-}
-
 const ROOT_DIR = path.resolve(__dirname, '..');
-const STARTUP_DIR = path.join(ROOT_DIR, 'startup', 'startup');
 const JSON_PATH = path.join(ROOT_DIR, 'data', 'plants.json');
 const MODEL_DIR = path.join(ROOT_DIR, 'server', 'models');
 const HASH_FILE = path.join(MODEL_DIR, 'plant_vision_hashes.json');
 
-async function main() {
+/**
+ * Résolveur multiplateforme du dossier photographique (gère la casse Linux / Render)
+ */
+function resolveStartupDir(rootDir) {
+  const candidates = [
+    path.join(rootDir, 'Startup', 'Startup'),
+    path.join(rootDir, 'startup', 'startup'),
+    path.join(rootDir, 'Startup'),
+    path.join(rootDir, 'startup'),
+    path.join(__dirname, '..', 'Startup', 'Startup'),
+    path.join(__dirname, '..', 'startup', 'startup')
+  ];
+
+  for (const c of candidates) {
+    if (fs.existsSync(c)) return c;
+  }
+
+  // Résolution insensible à la casse
+  try {
+    const items = fs.readdirSync(rootDir);
+    const sItem = items.find(i => i.toLowerCase() === 'startup');
+    if (sItem) {
+      const p1 = path.join(rootDir, sItem);
+      const subItems = fs.readdirSync(p1);
+      const subS = subItems.find(i => i.toLowerCase() === 'startup');
+      if (subS) return path.join(p1, subS);
+      return p1;
+    }
+  } catch (e) {}
+
+  return path.join(rootDir, 'Startup', 'Startup');
+}
+
+async function retrainVisionSignatures() {
   console.log('=======================================================================');
-  console.log('   DzHerba -- REGENERATION DU MODELE DE VISION ET DES SIGNATURES IA');
+  console.log('   DzHerba -- RÉGÉNÉRATION DU MODÈLE DE VISION ET DES SIGNATURES IA');
   console.log('=======================================================================\n');
 
-  if (!fs.existsSync(STARTUP_DIR)) {
-    console.error('[!] Dossier startup/startup introuvable :', STARTUP_DIR);
-    process.exit(1);
+  const startupDir = resolveStartupDir(ROOT_DIR);
+  console.log('[1/4] Dossier de photographies botaniques résolu :', startupDir);
+
+  if (!fs.existsSync(startupDir)) {
+    throw new Error(`Dossier photographique introuvable : ${startupDir}`);
   }
 
   // 1. Scanner les dossiers d'espèces
-  console.log('[1/4] Scan du dossier de photographies botaniques (startup/startup)...');
-  const folders = fs.readdirSync(STARTUP_DIR).filter(f => /^\d+$/.test(f));
+  const folders = fs.readdirSync(startupDir).filter(f => /^\d+$/.test(f));
   folders.sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
 
   let totalImagesCount = 0;
@@ -45,8 +72,13 @@ async function main() {
 
   for (const folderName of folders) {
     const plantId = parseInt(folderName, 10);
-    const folderPath = path.join(STARTUP_DIR, folderName);
-    const files = fs.readdirSync(folderPath);
+    const folderPath = path.join(startupDir, folderName);
+    let files = [];
+    try {
+      files = fs.readdirSync(folderPath);
+    } catch (e) {
+      continue;
+    }
 
     const plantImages = [];
 
@@ -105,58 +137,74 @@ async function main() {
 
   // 3. Mise à jour de data/plants.json
   console.log('\n[3/4] Mise à jour des galeries d\'images dans data/plants.json...');
-  let plants = [];
   if (fs.existsSync(JSON_PATH)) {
-    plants = JSON.parse(fs.readFileSync(JSON_PATH, 'utf8'));
-    for (const p of plants) {
-      if (plantImagesMap[p.id]) {
-        p.images = plantImagesMap[p.id];
-      } else if (!p.images) {
-        p.images = [];
+    try {
+      const plants = JSON.parse(fs.readFileSync(JSON_PATH, 'utf8'));
+      for (const p of plants) {
+        if (plantImagesMap[p.id]) {
+          p.images = plantImagesMap[p.id];
+        } else if (!p.images) {
+          p.images = [];
+        }
       }
+      fs.writeFileSync(JSON_PATH, JSON.stringify(plants, null, 2), 'utf8');
+      const webJsonPath = path.join(ROOT_DIR, 'web', 'src', 'data', 'plants.json');
+      if (fs.existsSync(path.dirname(webJsonPath))) {
+        fs.writeFileSync(webJsonPath, JSON.stringify(plants, null, 2), 'utf8');
+      }
+      console.log(`[OK] data/plants.json et web/src/data/plants.json mis à jour avec succès.`);
+    } catch (jsonErr) {
+      console.warn('[!] Avertissement mise à jour JSON :', jsonErr.message);
     }
-    fs.writeFileSync(JSON_PATH, JSON.stringify(plants, null, 2), 'utf8');
-    const webJsonPath = path.join(ROOT_DIR, 'web', 'src', 'data', 'plants.json');
-    if (fs.existsSync(path.dirname(webJsonPath))) {
-      fs.writeFileSync(webJsonPath, JSON.stringify(plants, null, 2), 'utf8');
-    }
-    console.log(`[OK] data/plants.json et web/src/data/plants.json mis à jour avec succès.`);
   }
 
-  // 4. Synchronisation avec MySQL dzherba_db
-  console.log('\n[4/4] Synchronisation des images avec la base de données MySQL...');
+  // 4. Synchronisation avec la base SQLite
+  console.log('\n[4/4] Synchronisation des images avec SQLite (data/dzherba.db)...');
   try {
-    const pool = mysql.createPool({
-      host: '127.0.0.1',
-      port: 3306,
-      user: 'root',
-      password: '',
-      database: 'dzherba_db',
-      charset: 'utf8mb4'
-    });
-
-    let updatedDbCount = 0;
-    for (const [plantIdStr, imgList] of Object.entries(plantImagesMap)) {
-      const pid = parseInt(plantIdStr, 10);
-      await pool.query('UPDATE plants SET images = ? WHERE id = ?', [JSON.stringify(imgList), pid]);
-      updatedDbCount++;
+    let dbModule = null;
+    try {
+      dbModule = require('../server/db');
+    } catch (e1) {
+      try {
+        dbModule = require(path.join(ROOT_DIR, 'server', 'db'));
+      } catch (e2) {}
     }
 
-    console.log(`[OK] MySQL synchronisé avec succès pour ${updatedDbCount} espèces illustrées.`);
-    await pool.end();
+    if (dbModule && dbModule.db) {
+      const updateStmt = dbModule.db.prepare('UPDATE plants SET images = ? WHERE id = ?');
+      dbModule.db.exec('BEGIN TRANSACTION');
+      let updatedDbCount = 0;
+      for (const [plantIdStr, imgList] of Object.entries(plantImagesMap)) {
+        const pid = parseInt(plantIdStr, 10);
+        updateStmt.run(JSON.stringify(imgList), pid);
+        updatedDbCount++;
+      }
+      dbModule.db.exec('COMMIT');
+      console.log(`[OK] SQLite synchronisé avec succès pour ${updatedDbCount} espèces illustrées.`);
+    }
   } catch (dbErr) {
-    console.warn('[!] Note MySQL :', dbErr.message);
-    console.log('[i] La base MySQL sera synchronisée automatiquement lors du prochain démarrage du serveur.');
+    console.warn('[!] Note synchronisation SQLite :', dbErr.message);
   }
 
   console.log('\n=======================================================================');
-  console.log('   REGENERATION TERMINEE AVEC SUCCES !');
+  console.log('   RÉGÉNÉRATION TERMINÉE AVEC SUCCÈS !');
   console.log(`   - Modèle IA Vision : ${totalImagesCount} signatures visuelles actives`);
   console.log(`   - Espèces couvertes : ${speciesWithPhotos} espèces avec photos`);
   console.log('=======================================================================\n');
+
+  return visionData;
 }
 
-main().catch(err => {
-  console.error('[ERREUR CRITIQUE]', err);
-  process.exit(1);
-});
+if (require.main === module) {
+  retrainVisionSignatures()
+    .then(() => process.exit(0))
+    .catch(err => {
+      console.error('[ERREUR CRITIQUE]', err);
+      process.exit(1);
+    });
+}
+
+module.exports = {
+  retrainVisionSignatures,
+  resolveStartupDir
+};

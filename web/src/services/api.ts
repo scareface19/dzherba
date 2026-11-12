@@ -278,7 +278,10 @@ export const api = {
   // Retrain / Re-index Vision AI Model
   async retrainVisionModel(): Promise<{ success: boolean; count: number; speciesCount: number; message: string }> {
     const res = await fetch(`${API_BASE}/vision/retrain`, { method: 'POST' });
-    if (!res.ok) throw new Error("Erreur lors du réentraînement du modèle IA Vision");
+    if (!res.ok) {
+      const errData = await res.json().catch(() => null);
+      throw new Error(errData?.error || errData?.message || "Erreur lors du réentraînement du modèle IA Vision");
+    }
     return await res.json();
   }
 };
