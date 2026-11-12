@@ -1033,6 +1033,7 @@ export function App() {
           <PricingSection
             userRole={effectiveRole}
             plans={pricingPlans}
+            currentUser={currentUser}
             onChangeUserRole={(newRole) => {
               if (currentUser) {
                 const updatedUser: User = {
@@ -1040,7 +1041,7 @@ export function App() {
                   role: newRole,
                   subscription: newRole !== 'free' ? {
                     plan: newRole === 'institution' ? 'Licence Campus B2B' : 'Chercheur B2C',
-                    expiresAt: '2027-10-24',
+                    expiresAt: '2027-11-12',
                     status: 'active',
                   } : undefined,
                 };

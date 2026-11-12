@@ -1054,13 +1054,22 @@ app.post('/api/subscriptions', async (req, res) => {
   try {
     const s = req.body;
     const subId = `SUB-${Math.floor(1000 + Math.random() * 9000)}`;
-    const ref = `CIB-${Math.floor(10000000 + Math.random() * 90000000)}`;
+    const ref = s.transactionRef || `SATIM-${Math.floor(10000000 + Math.random() * 90000000)}`;
+
+    const startDate = new Date().toISOString().split('T')[0];
+    const endDateObj = new Date();
+    if (s.billingCycle === 'monthly') {
+      endDateObj.setMonth(endDateObj.getMonth() + 1);
+    } else {
+      endDateObj.setFullYear(endDateObj.getFullYear() + 1);
+    }
+    const endDate = endDateObj.toISOString().split('T')[0];
 
     const sql = `
       INSERT INTO subscriptions (
         id, user_id, user_name, user_email, organization, plan, status,
         amount_dzd, payment_method, transaction_ref, start_date, end_date
-      ) VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, CURDATE(), DATE_ADD(CURDATE(), INTERVAL 1 YEAR))
+      ) VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?)
     `;
 
     await pool.query(sql, [
@@ -1072,17 +1081,27 @@ app.post('/api/subscriptions', async (req, res) => {
       s.plan || 'researcher_annual',
       s.amountDZD || 9800,
       s.paymentMethod || 'Edahabia',
-      ref
+      ref,
+      startDate,
+      endDate
     ]);
 
-    // Update user role if needed
+    // Update user role if user exists
     if (s.userId) {
-      const newRole = s.plan.includes('institution') ? 'institution' : 'researcher';
+      const newRole = s.role || (s.plan.includes('institution') ? 'institution' : 'researcher');
       await pool.query('UPDATE users SET role = ? WHERE id = ?', [newRole, s.userId]);
     }
 
-    res.status(201).json({ id: subId, transactionRef: ref, message: 'Subscription processed via CIB/Edahabia' });
+    res.status(201).json({
+      success: true,
+      id: subId,
+      transactionRef: ref,
+      startDate,
+      endDate,
+      message: 'Abonnement validé avec succès par la passerelle SATIM / Edahabia'
+    });
   } catch (err) {
+    console.error('[DzHerba Subscriptions Error]:', err);
     res.status(500).json({ error: err.message });
   }
 });

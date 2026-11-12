@@ -1,32 +1,56 @@
 import React, { useState } from 'react';
-import type { UserRole, Language, PricingPlan } from '../types';
+import type { UserRole, Language, PricingPlan, User } from '../types';
 import { Check, Building2, CreditCard, Sparkles, CheckCircle2 } from 'lucide-react';
 import { translations } from '../i18n';
+import { SatimPaymentModal } from './SatimPaymentModal';
 
 interface PricingSectionProps {
   userRole: UserRole;
   onChangeUserRole: (role: UserRole) => void;
   currentLang?: Language;
   plans?: PricingPlan[];
+  currentUser?: User | null;
 }
 
 export const PricingSection: React.FC<PricingSectionProps> = ({ 
   userRole, 
   onChangeUserRole,
   currentLang = 'fr',
-  plans
+  plans,
+  currentUser
 }) => {
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'annual'>('annual');
   const [showPaymentSuccess, setShowPaymentSuccess] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
+  const [selectedPlanForPayment, setSelectedPlanForPayment] = useState<PricingPlan | null>(null);
+  const [isSatimModalOpen, setIsSatimModalOpen] = useState(false);
 
   const t = translations[currentLang].pricing;
 
-  const handleSimulatePayment = (role: UserRole, label: string) => {
-    onChangeUserRole(role);
-    setSuccessMessage(`${t.paymentSuccessTitle} (${label})`);
+  const handlePlanClick = (plan: PricingPlan) => {
+    // 1. Plan Gratuit (0 DZD) -> Pas de paiement par carte Edahabia / CIB !
+    if (plan.priceDZD === 0 || plan.role === 'free') {
+      onChangeUserRole('free');
+      setSuccessMessage(currentLang === 'ar' ? 'تم اختيار الخطة المجانية بنجاح' : 'Plan Découverte Gratuit sélectionné avec succès');
+      setShowPaymentSuccess(true);
+      setTimeout(() => setShowPaymentSuccess(false), 5000);
+      return;
+    }
+
+    // 2. Plan Payant (Chercheur Pro, Campus Institution, etc.) -> Ouvrir le Guichet SATIM CIB / Edahabia
+    setSelectedPlanForPayment(plan);
+    setIsSatimModalOpen(true);
+  };
+
+  const handlePaymentSuccess = (newRole: UserRole) => {
+    onChangeUserRole(newRole);
+    setSuccessMessage(
+      currentLang === 'ar'
+        ? 'تهانينا ! تم تأكيد الدفع عبر SATIM وتفعيل اشتراكك بنجاح'
+        : `Paiement SATIM validé avec succès ! Votre compte bénéficie désormais des accès ${newRole === 'institution' ? 'Campus Institutionnel' : 'Chercheur Pro'}.`
+    );
     setShowPaymentSuccess(true);
-    setTimeout(() => setShowPaymentSuccess(false), 5000);
+    setTimeout(() => setShowPaymentSuccess(false), 7000);
   };
 
   return (
@@ -150,21 +174,51 @@ export const PricingSection: React.FC<PricingSectionProps> = ({
                 </div>
 
                 <div className="space-y-3 pt-2">
-                  <button
-                    onClick={() => handleSimulatePayment(plan.role, displayName)}
-                    className={`w-full py-3.5 rounded-2xl font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-md cursor-pointer ${
-                      isCurrent
-                        ? 'bg-emerald-600 text-white hover:bg-emerald-700'
-                        : isHighlighted
-                        ? 'bg-[#426B5F] text-white hover:bg-[#2D4A41]'
-                        : 'bg-white border-2 border-[#CD9850] text-[#0B0B0B] hover:bg-[#CD9850]'
-                    }`}
-                  >
-                    {plan.role === 'institution' ? <Building2 className="w-4 h-4" /> : <CreditCard className="w-4 h-4" />}
-                    <span>{isCurrent ? (currentLang === 'ar' ? 'الاشتراك الحالي' : 'Plan Actuel') : t.subscribeBtn}</span>
-                  </button>
+                  {plan.priceDZD === 0 || plan.role === 'free' ? (
+                    <button
+                      onClick={() => handlePlanClick(plan)}
+                      disabled={isCurrent}
+                      className={`w-full py-3.5 rounded-2xl font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-xs ${
+                        isCurrent
+                          ? 'bg-emerald-600 text-white cursor-default'
+                          : 'bg-gray-100 text-[#0B0B0B] hover:bg-gray-200 cursor-pointer border border-[#E1D3BE]'
+                      }`}
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>
+                        {isCurrent 
+                          ? (currentLang === 'ar' ? 'الاشتراك الحالي' : 'Plan Actuel') 
+                          : (currentLang === 'ar' ? 'اختيار الخطة المجانية' : 'Passer au Plan Gratuit')}
+                      </span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => handlePlanClick(plan)}
+                      className={`w-full py-3.5 rounded-2xl font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-md cursor-pointer ${
+                        isCurrent
+                          ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+                          : isHighlighted
+                          ? 'bg-[#426B5F] text-white hover:bg-[#2D4A41]'
+                          : 'bg-[#B8860B] text-white hover:bg-[#996515]'
+                      }`}
+                    >
+                      {plan.role === 'institution' ? <Building2 className="w-4 h-4" /> : <CreditCard className="w-4 h-4" />}
+                      <span>
+                        {isCurrent 
+                          ? (currentLang === 'ar' ? 'الاشتراك الحالي' : 'Plan Actuel') 
+                          : (currentLang === 'ar' ? 'الدفع بالذهبية / CIB' : 'Souscrire par CIB / Edahabia')}
+                      </span>
+                    </button>
+                  )}
+
                   <div className="flex items-center justify-center gap-1.5 text-[10px] text-[#575D5A] text-center">
-                    <span>{t.cibEdahabia}</span>
+                    {plan.priceDZD === 0 || plan.role === 'free' ? (
+                      <span className="text-gray-500 font-medium">
+                        {currentLang === 'ar' ? 'بدون بطاقة بنكية • 100% مجاني' : 'Sans carte bancaire • 100% Gratuit'}
+                      </span>
+                    ) : (
+                      <span>{t.cibEdahabia}</span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -176,6 +230,17 @@ export const PricingSection: React.FC<PricingSectionProps> = ({
           </div>
         )}
       </div>
+
+      {/* Guichet de Paiement SATIM & Edahabia Modal */}
+      <SatimPaymentModal
+        isOpen={isSatimModalOpen}
+        onClose={() => setIsSatimModalOpen(false)}
+        plan={selectedPlanForPayment}
+        billingCycle={billingCycle}
+        currentUser={currentUser}
+        onSuccess={handlePaymentSuccess}
+        currentLang={currentLang}
+      />
     </div>
   );
 };
