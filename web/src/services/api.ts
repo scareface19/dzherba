@@ -260,16 +260,28 @@ export const api = {
     return await res.json();
   },
 
-  // Botanical LLM Assistant
-  async askBotanicalAssistant(message: string, history?: any[]): Promise<{
+  // Botanical LLM Assistant RAG 2.0
+  async askBotanicalAssistant(
+    message: string, 
+    history?: any[], 
+    options?: { provider?: string; apiKey?: string; language?: string; model?: string }
+  ): Promise<{
     response: string;
     plants: Plant[];
     language: string;
+    engine?: string;
   }> {
     const res = await fetch(`${API_BASE}/assistant/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message, history })
+      body: JSON.stringify({ 
+        message, 
+        history,
+        provider: options?.provider,
+        apiKey: options?.apiKey,
+        language: options?.language,
+        model: options?.model
+      })
     });
     if (!res.ok) throw new Error("Erreur de communication avec l'assistant LLM");
     return await res.json();

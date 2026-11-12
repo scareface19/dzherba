@@ -847,16 +847,17 @@ app.post('/api/identify', upload.single('image'), async (req, res) => {
 // -------------------------------------------------------------
 app.post('/api/assistant/chat', async (req, res) => {
   try {
-    const { message, history, options } = req.body;
+    const { message, history, options, apiKey, provider, language, model } = req.body;
     if (!message || !message.trim()) {
       return res.status(400).json({ error: 'Empty message' });
     }
 
     const ragOptions = {
       ...(options || {}),
-      apiKey: req.body.apiKey,
-      provider: req.body.provider,
-      language: req.body.language
+      apiKey: apiKey || options?.apiKey,
+      provider: provider || options?.provider,
+      language: language || options?.language,
+      model: model || options?.model
     };
 
     const result = await botanicalRagEngine.answerQuestion(message.trim(), history || [], ragOptions);
